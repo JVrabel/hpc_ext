@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'none'; style-src {{cspSource}} 'unsafe-inline'; script-src 'nonce-{{nonce}}';" />
+  <link rel="stylesheet" href="{{cssUri}}" />
+  <title>Profile Editor</title>
+</head>
+<body>
+  <h2 id="title">Add Profile</h2>
+
+  <div class="form-group">
+    <label for="name">Profile Name</label>
+    <input type="text" id="name" placeholder="e.g. mycluster" />
+  </div>
+
+  <hr class="section-divider" />
+
+  <div class="form-group">
+    <label for="sshHost">SSH Host</label>
+    <input type="text" id="sshHost" placeholder="hostname or SSH alias" />
+    <div class="hint">SSH config alias (e.g. mycluster) or hostname (e.g. login.hpc.example.com)</div>
+  </div>
+
+  <div class="form-group">
+    <label for="sshUser">SSH User (optional)</label>
+    <input type="text" id="sshUser" placeholder="Leave empty to use SSH config default" />
+  </div>
+
+  <div class="form-group">
+    <label for="sshPort">SSH Port (optional)</label>
+    <input type="number" id="sshPort" placeholder="22" />
+  </div>
+
+  <div class="form-group">
+    <label for="sshIdentityFile">SSH Identity File (optional)</label>
+    <div class="browse-group">
+      <input type="text" id="sshIdentityFile" placeholder="~/.ssh/id_rsa" />
+      <button type="button" class="secondary" onclick="browseFile()">Browse...</button>
+    </div>
+  </div>
+
+  <hr class="section-divider" />
+
+  <div class="form-group">
+    <label for="localProjectDir">Local Project Directory</label>
+    <div class="browse-group">
+      <input type="text" id="localProjectDir" placeholder="/home/user/project or C:\Users\user\project" />
+      <button type="button" class="secondary" onclick="browseFolder()">Browse...</button>
+    </div>
+  </div>
+
+  <div class="form-group">
+    <label for="remoteProjectDir">Remote Project Directory</label>
+    <input type="text" id="remoteProjectDir" placeholder="/home/user/project" />
+  </div>
+
+  <hr class="section-divider" />
+
+  <div class="form-group">
+    <label for="syncMode">Sync Mode</label>
+    <select id="syncMode">
+      <option value="push">Push (local → remote)</option>
+      <option value="pull">Pull (remote → local)</option>
+      <option value="both">Both</option>
+    </select>
+  </div>
+
+  <div class="form-group">
+    <label for="excludePatterns">Exclude Patterns (one per line)</label>
+    <textarea id="excludePatterns" placeholder=".git&#10;node_modules&#10;__pycache__&#10;.venv"></textarea>
+  </div>
+
+  <div class="form-group">
+    <div class="checkbox-group">
+      <input type="checkbox" id="deleteOnSync" />
+      <label for="deleteOnSync" style="margin:0; text-transform:none; font-size:inherit; color:inherit;">
+        Delete remote files not present locally (--delete)
+      </label>
+    </div>
+  </div>
+
+  <div class="button-row">
+    <button type="button" onclick="saveProfile()">Save</button>
+    <button type="button" class="secondary" onclick="cancel()">Cancel</button>
+    <div class="spacer"></div>
+    <button type="button" class="danger" id="deleteBtn" onclick="deleteProfile()" style="display:none;">Delete</button>
+  </div>
+
+  <script nonce="{{nonce}}">
+    const vscode = acquireVsCodeApi();
+
+    // Receive messages from the extension
+    window.addEventListener('message', (event) => {
+      const msg = event.data;
+      if (msg.type === 'load-profile') {
+        const p = msg.profile;
+        document.getElementById('title').textContent = 'Edit Profile';
+        document.getElementById('name').value = p.name || '';
+        document.getElementById('name').readOnly = true;
+        document.getElementById('sshHost').value = p.sshHost || '';
+        document.getElementById('sshUser').value = p.sshUser || '';
+        document.getElementById('sshPort').value = p.sshPort || '';
+        document.getElementById('sshIdentityFile').value = p.sshIdentityFile || '';
+        document.getElementById('localProjectDir').value = p.localProjectDir || '';
+        document.getElementById('remoteProjectDir').value = p.remoteProjectDir || '';
+        document.getElementById('syncMode').value = p.syncMode || 'push';
+        document.getElementById('excludePatterns').value = (p.excludePatterns || []).join('\n');
+        document.getElementById('deleteOnSync').checked = !!p.deleteOnSync;
+        document.getElementById('deleteBtn').style.display = 'inline-block';
+      } else if (msg.type === 'set-folder') {
+        document.getElementById('localProjectDir').value = msg.path;
+      } else if (msg.type === 'set-file') {
+        document.getElementById('sshIdentityFile').value = msg.path;
+      }
+    });
+
+    function saveProfile() {
+      const name = document.getElementById('name').value.trim();
+      const sshHost = document.getElementById('sshHost').value.trim();
+      const remoteProjectDir = document.getElementById('remoteProjectDir').value.trim();
+      const localProjectDir = document.getElementById('localProjectDir').value.trim();
+
+      if (!name || !sshHost || !remoteProjectDir || !localProjectDir) {
+        vscode.postMessage({ type: 'error', message: 'Name, SSH Host, Remote Dir, and Local Dir are required.' });
+        return;
+      }
+
+      const excludeRaw = document.getElementById('excludePatterns').value.trim();
+      const excludePatterns = excludeRaw ? excludeRaw.split('\n').map(s => s.trim()).filter(Boolean) : [];
+
+      const profile = {
+        name,
+        sshHost,
+        sshUser: document.getElementById('sshUser').value.trim() || undefined,
+        sshPort: parseInt(document.getElementById('sshPort').value) || undefined,
+        sshIdentityFile: document.getElementById('sshIdentityFile').value.trim() || undefined,
+        remoteProjectDir,
+        localProjectDir,
+        syncMode: document.getElementById('syncMode').value,
+        excludePatterns,
+        deleteOnSync: document.getElementById('deleteOnSync').checked,
+      };
+
+      vscode.postMessage({ type: 'save-profile', profile });
+    }
+
+    function deleteProfile() {
+      const name = document.getElementById('name').value.trim();
+      if (name && confirm('Delete profile "' + name + '"?')) {
+        vscode.postMessage({ type: 'delete-profile', name });
+      }
+    }
+
+    function cancel() {
+      vscode.postMessage({ type: 'cancel' });
+    }
+
+    function browseFolder() {
+      vscode.postMessage({ type: 'browse-folder' });
+    }
+
+    function browseFile() {
+      vscode.postMessage({ type: 'browse-file' });
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,154 @@
+{
+  "name": "hpc-sync",
+  "displayName": "HPC Sync",
+  "description": "Local-first HPC development: sync projects to remote Linux HPC via rsync/scp, open SSH shells, manage profiles.",
+  "version": "0.1.0",
+  "publisher": "hpc-sync",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onView:hpc-sync.sidebar"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "hpc-sync-explorer",
+          "title": "HPC Sync",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "hpc-sync-explorer": [
+        {
+          "id": "hpc-sync.sidebar",
+          "name": "HPC Sync",
+          "type": "tree"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "hpc-sync.selectProfile",
+        "title": "HPC Sync: Select Profile"
+      },
+      {
+        "command": "hpc-sync.editProfiles",
+        "title": "HPC Sync: Manage Profiles",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "hpc-sync.push",
+        "title": "HPC Sync: Push to Remote",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "hpc-sync.pushDryRun",
+        "title": "HPC Sync: Push (Dry Run)",
+        "icon": "$(eye)"
+      },
+      {
+        "command": "hpc-sync.openShell",
+        "title": "HPC Sync: Open Remote Shell",
+        "icon": "$(terminal)"
+      },
+      {
+        "command": "hpc-sync.cancelSync",
+        "title": "HPC Sync: Cancel Sync"
+      }
+    ],
+    "configuration": {
+      "title": "HPC Sync",
+      "properties": {
+        "hpc-sync.profiles": {
+          "type": "array",
+          "description": "HPC remote profiles",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "sshHost",
+              "remoteProjectDir",
+              "localProjectDir"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "sshHost": {
+                "type": "string",
+                "description": "SSH host alias or hostname"
+              },
+              "sshUser": {
+                "type": "string"
+              },
+              "sshPort": {
+                "type": "integer"
+              },
+              "sshIdentityFile": {
+                "type": "string"
+              },
+              "remoteProjectDir": {
+                "type": "string"
+              },
+              "localProjectDir": {
+                "type": "string"
+              },
+              "syncMode": {
+                "type": "string",
+                "enum": [
+                  "push",
+                  "pull",
+                  "both"
+                ],
+                "default": "push"
+              },
+              "excludePatterns": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "default": [
+                  ".git",
+                  "node_modules",
+                  "__pycache__",
+                  ".venv"
+                ]
+              },
+              "deleteOnSync": {
+                "type": "boolean",
+                "default": false
+              },
+              "remoteTreeRoot": {
+                "type": "string"
+              },
+              "remoteTreeDepth": {
+                "type": "integer",
+                "default": 3
+              }
+            }
+          },
+          "default": []
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.js",
+    "watch": "node esbuild.js --watch",
+    "compile": "tsc --noEmit",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.3.0"
+  }
+}
