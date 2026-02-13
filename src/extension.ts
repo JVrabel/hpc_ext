@@ -124,6 +124,14 @@ export function activate(context: vscode.ExtensionContext) {
       await setupSshKey(profile);
     }),
 
+    vscode.commands.registerCommand('hpc-sync.connectRemote', async () => {
+      await remoteExplorer.connect();
+    }),
+
+    vscode.commands.registerCommand('hpc-sync.disconnectRemote', () => {
+      remoteExplorer.disconnect();
+    }),
+
     vscode.commands.registerCommand('hpc-sync.refreshRemoteFiles', () => {
       remoteExplorer.refresh();
     }),

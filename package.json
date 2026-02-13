@@ -4,6 +4,11 @@
   "description": "Local-first HPC development: sync projects to remote Linux HPC via rsync/scp, open SSH shells, manage profiles.",
   "version": "0.1.0",
   "publisher": "hpc-sync",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/JVrabel/hpc_ext"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -43,7 +48,13 @@
     "viewsWelcome": [
       {
         "view": "hpc-sync.remoteFiles",
-        "contents": "No active profile.\n[Select Profile](command:hpc-sync.selectProfile)"
+        "contents": "No active profile.\n[Select Profile](command:hpc-sync.selectProfile)",
+        "when": "!hpc-sync.hasActiveProfile"
+      },
+      {
+        "view": "hpc-sync.remoteFiles",
+        "contents": "Not connected to remote.\n[Connect](command:hpc-sync.connectRemote)",
+        "when": "hpc-sync.hasActiveProfile && !hpc-sync.remoteConnected"
       }
     ],
     "commands": [
@@ -89,13 +100,33 @@
         "command": "hpc-sync.refreshRemoteFiles",
         "title": "HPC Sync: Refresh Remote Files",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "hpc-sync.connectRemote",
+        "title": "HPC Sync: Connect to Remote",
+        "icon": "$(plug)"
+      },
+      {
+        "command": "hpc-sync.disconnectRemote",
+        "title": "HPC Sync: Disconnect from Remote",
+        "icon": "$(debug-disconnect)"
       }
     ],
     "menus": {
       "view/title": [
         {
+          "command": "hpc-sync.connectRemote",
+          "when": "view == hpc-sync.remoteFiles && hpc-sync.hasActiveProfile && !hpc-sync.remoteConnected",
+          "group": "navigation"
+        },
+        {
+          "command": "hpc-sync.disconnectRemote",
+          "when": "view == hpc-sync.remoteFiles && hpc-sync.remoteConnected",
+          "group": "navigation"
+        },
+        {
           "command": "hpc-sync.refreshRemoteFiles",
-          "when": "view == hpc-sync.remoteFiles",
+          "when": "view == hpc-sync.remoteFiles && hpc-sync.remoteConnected",
           "group": "navigation"
         }
       ]
@@ -185,7 +216,7 @@
     "build": "node esbuild.js",
     "watch": "node esbuild.js --watch",
     "compile": "tsc --noEmit",
-    "package": "vsce package"
+    "package": "node scripts/package.js"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",

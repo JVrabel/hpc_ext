@@ -7,7 +7,7 @@
   </defs>
 
   <!-- 4 horizontal bars with circle cutout -->
-  <g mask="url(#cutout)" fill="currentColor">
+  <g mask="url(#cutout)" fill="#5B9BD5">
     <rect x="14" y="24" width="100" height="12" rx="6"/>
     <rect x="14" y="46" width="100" height="12" rx="6"/>
     <rect x="14" y="68" width="100" height="12" rx="6"/>
@@ -17,7 +17,7 @@
   <!-- Single sync arrow: ~300° CW arc, gap on right side -->
   <!-- From 4 o'clock (81,74) clockwise through 6,9,12 to 2 o'clock (81,54) -->
   <path d="M 81 74 A 20 20 0 1 1 81 54"
-        fill="none" stroke="currentColor" stroke-width="4"/>
+        fill="none" stroke="#5B9BD5" stroke-width="4"/>
   <!-- Arrowhead at 2 o'clock, pointing down-right along arc direction -->
-  <polygon points="84,59 77,57 85,52" fill="currentColor"/>
+  <polygon points="84,59 77,57 85,52" fill="#5B9BD5"/>
 </svg>

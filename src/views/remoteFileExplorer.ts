@@ -22,7 +22,7 @@ class RemoteTreeItem extends vscode.TreeItem {
     } else {
       this.contextValue = 'file';
       this.iconPath = new vscode.ThemeIcon('file');
-      // Open file read-only in editor when clicked
+      // Open file in editor when clicked
       const uri = vscode.Uri.parse(`hpc-remote://${this.remotePath}`);
       this.command = {
         command: 'vscode.open',
@@ -42,32 +42,77 @@ export class RemoteFileExplorer
 {
   private profile: HpcProfile | undefined;
   private session: SshSession | undefined;
+  private _connected = false;
 
   // TreeDataProvider events
   private _onDidChangeTreeData = new vscode.EventEmitter<RemoteTreeItem | undefined>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
-  // FileSystemProvider events (read-only, so these never fire)
+  // FileSystemProvider events
   private _onDidChangeFile = new vscode.EventEmitter<vscode.FileChangeEvent[]>();
   readonly onDidChangeFile = this._onDidChangeFile.event;
+
+  get connected(): boolean {
+    return this._connected;
+  }
 
   // ---- Profile management ----
 
   setActiveProfile(profile: HpcProfile | undefined): void {
+    // Disconnect if profile changes
+    if (this._connected) {
+      this.disconnectInternal();
+    }
+    this.profile = profile;
+    this.updateContext();
+    this._onDidChangeTreeData.fire(undefined);
+  }
+
+  async connect(): Promise<void> {
+    if (!this.profile) {
+      vscode.window.showWarningMessage('No active profile. Select one first.');
+      return;
+    }
+    if (this._connected) { return; }
+
+    this.session = new SshSession({
+      sshHost: this.profile.sshHost,
+      sshUser: this.profile.sshUser,
+      sshPort: this.profile.sshPort,
+      sshIdentityFile: this.profile.sshIdentityFile,
+    });
+
+    try {
+      await this.session.ensureAuthenticated();
+    } catch (err: any) {
+      this.session.dispose();
+      this.session = undefined;
+      vscode.window.showErrorMessage(`Connection failed: ${err.message}`);
+      return;
+    }
+
+    this._connected = true;
+    this.updateContext();
+    this._onDidChangeTreeData.fire(undefined);
+  }
+
+  disconnect(): void {
+    this.disconnectInternal();
+    this._onDidChangeTreeData.fire(undefined);
+  }
+
+  private disconnectInternal(): void {
     if (this.session) {
       this.session.dispose();
       this.session = undefined;
     }
-    this.profile = profile;
-    if (profile) {
-      this.session = new SshSession({
-        sshHost: profile.sshHost,
-        sshUser: profile.sshUser,
-        sshPort: profile.sshPort,
-        sshIdentityFile: profile.sshIdentityFile,
-      });
-    }
-    this._onDidChangeTreeData.fire(undefined);
+    this._connected = false;
+    this.updateContext();
+  }
+
+  private updateContext(): void {
+    vscode.commands.executeCommand('setContext', 'hpc-sync.hasActiveProfile', !!this.profile);
+    vscode.commands.executeCommand('setContext', 'hpc-sync.remoteConnected', this._connected);
   }
 
   refresh(): void {
@@ -84,7 +129,7 @@ export class RemoteFileExplorer
   }
 
   async getChildren(element?: RemoteTreeItem): Promise<RemoteTreeItem[]> {
-    if (!this.profile || !this.session) {
+    if (!this.profile || !this.session || !this._connected) {
       return [];
     }
 
@@ -131,10 +176,9 @@ export class RemoteFileExplorer
     });
   }
 
-  // ---- FileSystemProvider (read-only) ----
+  // ---- FileSystemProvider ----
 
   watch(): vscode.Disposable {
-    // No-op for read-only
     return new vscode.Disposable(() => {});
   }
 
@@ -210,9 +254,7 @@ export class RemoteFileExplorer
   }
 
   dispose(): void {
-    if (this.session) {
-      this.session.dispose();
-    }
+    this.disconnectInternal();
     this._onDidChangeTreeData.dispose();
     this._onDidChangeFile.dispose();
   }
