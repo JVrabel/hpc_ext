@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as crypto from 'crypto';
 import type { HpcProfile } from '../types';
 import { saveProfile, deleteProfile, getProfiles } from '../profiles';
+import { browseRemoteDirectory } from '../remoteBrowser';
 
 // Imported as text by esbuild
 import profileEditorHtml from '../webview/profileEditor.html';
@@ -80,6 +81,22 @@ export class ProfileEditorProvider {
           });
           if (uris?.[0]) {
             this.panel?.webview.postMessage({ type: 'set-file', path: uris[0].fsPath });
+          }
+          break;
+        }
+        case 'browse-remote': {
+          if (!msg.sshHost) {
+            vscode.window.showErrorMessage('Please fill in SSH Host before browsing remote directories.');
+            break;
+          }
+          const remotePath = await browseRemoteDirectory({
+            sshHost: msg.sshHost,
+            sshUser: msg.sshUser,
+            sshPort: msg.sshPort,
+            sshIdentityFile: msg.sshIdentityFile,
+          });
+          if (remotePath) {
+            this.panel?.webview.postMessage({ type: 'set-remote-folder', path: remotePath });
           }
           break;
         }

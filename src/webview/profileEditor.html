@@ -38,7 +38,7 @@
     <label for="sshIdentityFile">SSH Identity File (optional)</label>
     <div class="browse-group">
       <input type="text" id="sshIdentityFile" placeholder="~/.ssh/id_rsa" />
-      <button type="button" class="secondary" onclick="browseFile()">Browse...</button>
+      <button type="button" class="secondary" id="browseFileBtn">Browse...</button>
     </div>
   </div>
 
@@ -48,13 +48,16 @@
     <label for="localProjectDir">Local Project Directory</label>
     <div class="browse-group">
       <input type="text" id="localProjectDir" placeholder="/home/user/project or C:\Users\user\project" />
-      <button type="button" class="secondary" onclick="browseFolder()">Browse...</button>
+      <button type="button" class="secondary" id="browseFolderBtn">Browse...</button>
     </div>
   </div>
 
   <div class="form-group">
     <label for="remoteProjectDir">Remote Project Directory</label>
-    <input type="text" id="remoteProjectDir" placeholder="/home/user/project" />
+    <div class="browse-group">
+      <input type="text" id="remoteProjectDir" placeholder="/home/user/project" />
+      <button type="button" class="secondary" id="browseRemoteBtn">Browse Remote...</button>
+    </div>
   </div>
 
   <hr class="section-divider" />
@@ -83,10 +86,10 @@
   </div>
 
   <div class="button-row">
-    <button type="button" onclick="saveProfile()">Save</button>
-    <button type="button" class="secondary" onclick="cancel()">Cancel</button>
+    <button type="button" id="saveBtn">Save</button>
+    <button type="button" class="secondary" id="cancelBtn">Cancel</button>
     <div class="spacer"></div>
-    <button type="button" class="danger" id="deleteBtn" onclick="deleteProfile()" style="display:none;">Delete</button>
+    <button type="button" class="danger" id="deleteBtn" style="display:none;">Delete</button>
   </div>
 
   <script nonce="{{nonce}}">
@@ -114,17 +117,19 @@
         document.getElementById('localProjectDir').value = msg.path;
       } else if (msg.type === 'set-file') {
         document.getElementById('sshIdentityFile').value = msg.path;
+      } else if (msg.type === 'set-remote-folder') {
+        document.getElementById('remoteProjectDir').value = msg.path;
       }
     });
 
-    function saveProfile() {
+    document.getElementById('saveBtn').addEventListener('click', () => {
       const name = document.getElementById('name').value.trim();
       const sshHost = document.getElementById('sshHost').value.trim();
       const remoteProjectDir = document.getElementById('remoteProjectDir').value.trim();
       const localProjectDir = document.getElementById('localProjectDir').value.trim();
 
-      if (!name || !sshHost || !remoteProjectDir || !localProjectDir) {
-        vscode.postMessage({ type: 'error', message: 'Name, SSH Host, Remote Dir, and Local Dir are required.' });
+      if (!name || !sshHost || !localProjectDir) {
+        vscode.postMessage({ type: 'error', message: 'Name, SSH Host, and Local Dir are required.' });
         return;
       }
 
@@ -145,26 +150,36 @@
       };
 
       vscode.postMessage({ type: 'save-profile', profile });
-    }
+    });
 
-    function deleteProfile() {
+    document.getElementById('deleteBtn').addEventListener('click', () => {
       const name = document.getElementById('name').value.trim();
       if (name && confirm('Delete profile "' + name + '"?')) {
         vscode.postMessage({ type: 'delete-profile', name });
       }
-    }
+    });
 
-    function cancel() {
+    document.getElementById('cancelBtn').addEventListener('click', () => {
       vscode.postMessage({ type: 'cancel' });
-    }
+    });
 
-    function browseFolder() {
+    document.getElementById('browseFolderBtn').addEventListener('click', () => {
       vscode.postMessage({ type: 'browse-folder' });
-    }
+    });
 
-    function browseFile() {
+    document.getElementById('browseFileBtn').addEventListener('click', () => {
       vscode.postMessage({ type: 'browse-file' });
-    }
+    });
+
+    document.getElementById('browseRemoteBtn').addEventListener('click', () => {
+      vscode.postMessage({
+        type: 'browse-remote',
+        sshHost: document.getElementById('sshHost').value.trim(),
+        sshUser: document.getElementById('sshUser').value.trim() || undefined,
+        sshPort: parseInt(document.getElementById('sshPort').value) || undefined,
+        sshIdentityFile: document.getElementById('sshIdentityFile').value.trim() || undefined,
+      });
+    });
   </script>
 </body>
 </html>

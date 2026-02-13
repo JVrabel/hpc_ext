@@ -12,6 +12,8 @@ export function openRemoteShell(profile: HpcProfile): void {
   }
 
   args.push('-o', 'ForwardAgent=no');
+  args.push('-o', 'ServerAliveInterval=60');
+  args.push('-o', 'ServerAliveCountMax=60');
 
   const host = profile.sshUser ? `${profile.sshUser}@${profile.sshHost}` : profile.sshHost;
   args.push(host);

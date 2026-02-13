@@ -61,6 +61,16 @@
       {
         "command": "hpc-sync.cancelSync",
         "title": "HPC Sync: Cancel Sync"
+      },
+      {
+        "command": "hpc-sync.setupSshKey",
+        "title": "HPC Sync: Setup SSH Key",
+        "icon": "$(key)"
+      },
+      {
+        "command": "hpc-sync.showHelp",
+        "title": "HPC Sync: Help",
+        "icon": "$(question)"
       }
     ],
     "configuration": {

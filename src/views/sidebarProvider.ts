@@ -76,6 +76,13 @@ export class SidebarProvider implements vscode.TreeDataProvider<SidebarItem> {
     items.push(new ActionItem('Select Profile', 'hpc-sync.selectProfile', 'account'));
     items.push(new ActionItem('Manage Profiles', 'hpc-sync.editProfiles', 'gear'));
 
+    if (this.activeProfile) {
+      items.push(new ActionItem('Setup SSH Key', 'hpc-sync.setupSshKey', 'key'));
+    }
+
+    items.push(new SeparatorItem());
+    items.push(new ActionItem('Help', 'hpc-sync.showHelp', 'question'));
+
     return items;
   }
 

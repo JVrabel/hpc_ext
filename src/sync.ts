@@ -19,6 +19,11 @@ export class SyncEngine {
       return;
     }
 
+    if (!profile.remoteProjectDir || profile.remoteProjectDir === '/') {
+      vscode.window.showErrorMessage('Remote project directory is not set. Edit the profile and select a remote directory first.');
+      return;
+    }
+
     const rsync = await detectRsync();
     const scp = await detectScp();
 
@@ -26,6 +31,18 @@ export class SyncEngine {
       vscode.window.showErrorMessage('Neither rsync nor scp found. Please install rsync or ensure scp is available.');
       this.statusBar.setState(SyncState.Error);
       return;
+    }
+
+    // Confirm before destructive delete
+    if (profile.deleteOnSync && !dryRun) {
+      const answer = await vscode.window.showWarningMessage(
+        `Delete is enabled: files on the remote not present locally will be REMOVED from "${profile.remoteProjectDir}". This is not version-controlled and may be irreversible. Continue?`,
+        { modal: true },
+        'Yes, delete remote-only files',
+      );
+      if (answer !== 'Yes, delete remote-only files') {
+        return;
+      }
     }
 
     this.statusBar.setState(SyncState.Syncing, profile.name);
@@ -44,6 +61,9 @@ export class SyncEngine {
           return;
         }
         vscode.window.showWarningMessage('rsync not found, using scp (full copy, not incremental). Exclude patterns will be ignored.');
+        if (profile.deleteOnSync) {
+          await this.cleanRemoteDir(profile);
+        }
         await this.pushWithScp(profile);
       }
 
@@ -91,6 +111,8 @@ export class SyncEngine {
       parts.push(`-i "${profile.sshIdentityFile}"`);
     }
     parts.push('-o StrictHostKeyChecking=accept-new');
+    parts.push('-o ServerAliveInterval=60');
+    parts.push('-o ServerAliveCountMax=60');
     return parts.join(' ');
   }
 
@@ -148,6 +170,8 @@ export class SyncEngine {
         args.push('-i', profile.sshIdentityFile);
       }
       args.push('-o', 'StrictHostKeyChecking=accept-new');
+      args.push('-o', 'ServerAliveInterval=60');
+      args.push('-o', 'ServerAliveCountMax=60');
 
       let localDir = profile.localProjectDir.replace(/\\/g, '/');
       if (localDir.endsWith('/')) { localDir = localDir.slice(0, -1); }
@@ -159,6 +183,44 @@ export class SyncEngine {
       const proc = spawn('scp', args, { shell: true });
       this.process = proc;
       this.pipeOutput(proc, resolve, reject);
+    });
+  }
+
+  private cleanRemoteDir(profile: HpcProfile): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const remoteDir = profile.remoteProjectDir;
+      // Remove all contents inside the remote dir (files + hidden files), but keep the dir itself
+      const cmd = `find ${escapeShellArg(remoteDir)} -mindepth 1 -maxdepth 1 -exec rm -rf {} +`;
+
+      const sshArgs: string[] = [];
+      if (profile.sshPort) { sshArgs.push('-p', String(profile.sshPort)); }
+      if (profile.sshIdentityFile) { sshArgs.push('-i', profile.sshIdentityFile); }
+      sshArgs.push('-o', 'StrictHostKeyChecking=accept-new');
+
+      const host = profile.sshUser ? `${profile.sshUser}@${profile.sshHost}` : profile.sshHost;
+      sshArgs.push(host, cmd);
+
+      this.output.appendLine(`> ssh ${host} "${cmd}"`);
+
+      const proc = spawn('ssh', sshArgs, { stdio: ['pipe', 'pipe', 'pipe'] });
+
+      proc.stderr?.on('data', (data: Buffer) => {
+        const lines = data.toString().split('\n');
+        for (const line of lines) {
+          if (line.trim()) { this.output.appendLine(`[stderr] ${line}`); }
+        }
+      });
+
+      proc.on('close', (code) => {
+        if (code === 0) {
+          this.output.appendLine('Remote directory cleaned.');
+          resolve();
+        } else {
+          reject(new Error(`Failed to clean remote directory (exit code ${code})`));
+        }
+      });
+
+      proc.on('error', (err) => reject(err));
     });
   }
 
@@ -193,4 +255,8 @@ export class SyncEngine {
       reject(err);
     });
   }
+}
+
+function escapeShellArg(arg: string): string {
+  return "'" + arg.replace(/'/g, "'\\''") + "'";
 }
