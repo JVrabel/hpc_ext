@@ -85,6 +85,15 @@
     </div>
   </div>
 
+  <div class="form-group">
+    <div class="checkbox-group">
+      <input type="checkbox" id="remoteFilesEditable" />
+      <label for="remoteFilesEditable" style="margin:0; text-transform:none; font-size:inherit; color:inherit;">
+        Allow editing remote files in the sidebar explorer
+      </label>
+    </div>
+  </div>
+
   <div class="button-row">
     <button type="button" id="saveBtn">Save</button>
     <button type="button" class="secondary" id="cancelBtn">Cancel</button>
@@ -112,6 +121,7 @@
         document.getElementById('syncMode').value = p.syncMode || 'push';
         document.getElementById('excludePatterns').value = (p.excludePatterns || []).join('\n');
         document.getElementById('deleteOnSync').checked = !!p.deleteOnSync;
+        document.getElementById('remoteFilesEditable').checked = !!p.remoteFilesEditable;
         document.getElementById('deleteBtn').style.display = 'inline-block';
       } else if (msg.type === 'set-folder') {
         document.getElementById('localProjectDir').value = msg.path;
@@ -147,6 +157,7 @@
         syncMode: document.getElementById('syncMode').value,
         excludePatterns,
         deleteOnSync: document.getElementById('deleteOnSync').checked,
+        remoteFilesEditable: document.getElementById('remoteFilesEditable').checked,
       };
 
       vscode.postMessage({ type: 'save-profile', profile });

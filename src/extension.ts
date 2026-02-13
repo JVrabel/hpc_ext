@@ -8,6 +8,7 @@ import { getActiveProfile, selectProfileQuickPick, setActiveProfile } from './pr
 import { openRemoteShell } from './shell';
 import { setupSshKey } from './sshKeySetup';
 import { SyncState } from './types';
+import { RemoteFileExplorer } from './views/remoteFileExplorer';
 
 export function activate(context: vscode.ExtensionContext) {
   const output = createOutputChannel();
@@ -16,22 +17,37 @@ export function activate(context: vscode.ExtensionContext) {
   const sidebar = new SidebarProvider();
   const profileEditor = new ProfileEditorProvider(context.extensionUri);
 
+  const remoteExplorer = new RemoteFileExplorer();
+
   // Register sidebar tree view
   const treeView = vscode.window.createTreeView('hpc-sync.sidebar', {
     treeDataProvider: sidebar,
   });
 
+  // Register remote files tree view
+  const remoteTreeView = vscode.window.createTreeView('hpc-sync.remoteFiles', {
+    treeDataProvider: remoteExplorer,
+  });
+
+  // Register filesystem provider for hpc-remote:// URIs
+  // Write permission is gated per-profile by remoteFilesEditable
+  context.subscriptions.push(
+    vscode.workspace.registerFileSystemProvider('hpc-remote', remoteExplorer),
+  );
+
   // Restore active profile
   const activeProfile = getActiveProfile(context);
   if (activeProfile) {
     sidebar.setActiveProfile(activeProfile);
+    remoteExplorer.setActiveProfile(activeProfile);
     statusBar.setState(SyncState.Idle, activeProfile.name);
   }
 
-  // When profiles change in the editor, refresh sidebar
+  // When profiles change in the editor, refresh sidebar + remote explorer
   profileEditor.onProfilesChanged(() => {
     const current = getActiveProfile(context);
     sidebar.setActiveProfile(current);
+    remoteExplorer.setActiveProfile(current);
     if (current) {
       statusBar.setState(SyncState.Idle, current.name);
     }
@@ -43,6 +59,7 @@ export function activate(context: vscode.ExtensionContext) {
       if (e.affectsConfiguration('hpc-sync.profiles')) {
         const current = getActiveProfile(context);
         sidebar.setActiveProfile(current);
+        remoteExplorer.setActiveProfile(current);
       }
     }),
   );
@@ -53,6 +70,7 @@ export function activate(context: vscode.ExtensionContext) {
       const profile = await selectProfileQuickPick(context);
       if (profile) {
         sidebar.setActiveProfile(profile);
+        remoteExplorer.setActiveProfile(profile);
         statusBar.setState(SyncState.Idle, profile.name);
       }
     }),
@@ -67,6 +85,7 @@ export function activate(context: vscode.ExtensionContext) {
         const selected = await selectProfileQuickPick(context);
         if (!selected) { return; }
         sidebar.setActiveProfile(selected);
+        remoteExplorer.setActiveProfile(selected);
         statusBar.setState(SyncState.Idle, selected.name);
         await syncEngine.push(selected, false);
         return;
@@ -105,6 +124,10 @@ export function activate(context: vscode.ExtensionContext) {
       await setupSshKey(profile);
     }),
 
+    vscode.commands.registerCommand('hpc-sync.refreshRemoteFiles', () => {
+      remoteExplorer.refresh();
+    }),
+
     vscode.commands.registerCommand('hpc-sync.showHelp', () => {
       const panel = vscode.window.createWebviewPanel(
         'hpcSyncHelp',
@@ -116,7 +139,7 @@ export function activate(context: vscode.ExtensionContext) {
     }),
   );
 
-  context.subscriptions.push(treeView, statusBar, profileEditor, sidebar);
+  context.subscriptions.push(treeView, remoteTreeView, statusBar, profileEditor, sidebar, remoteExplorer);
 }
 
 function getHelpHtml(): string {

@@ -11,7 +11,9 @@
     "Other"
   ],
   "activationEvents": [
-    "onView:hpc-sync.sidebar"
+    "onView:hpc-sync.sidebar",
+    "onView:hpc-sync.remoteFiles",
+    "onFileSystem:hpc-remote"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -30,9 +32,20 @@
           "id": "hpc-sync.sidebar",
           "name": "HPC Sync",
           "type": "tree"
+        },
+        {
+          "id": "hpc-sync.remoteFiles",
+          "name": "Remote Files",
+          "type": "tree"
         }
       ]
     },
+    "viewsWelcome": [
+      {
+        "view": "hpc-sync.remoteFiles",
+        "contents": "No active profile.\n[Select Profile](command:hpc-sync.selectProfile)"
+      }
+    ],
     "commands": [
       {
         "command": "hpc-sync.selectProfile",
@@ -71,8 +84,22 @@
         "command": "hpc-sync.showHelp",
         "title": "HPC Sync: Help",
         "icon": "$(question)"
+      },
+      {
+        "command": "hpc-sync.refreshRemoteFiles",
+        "title": "HPC Sync: Refresh Remote Files",
+        "icon": "$(refresh)"
       }
     ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "hpc-sync.refreshRemoteFiles",
+          "when": "view == hpc-sync.remoteFiles",
+          "group": "navigation"
+        }
+      ]
+    },
     "configuration": {
       "title": "HPC Sync",
       "properties": {
@@ -141,6 +168,11 @@
               "remoteTreeDepth": {
                 "type": "integer",
                 "default": 3
+              },
+              "remoteFilesEditable": {
+                "type": "boolean",
+                "default": false,
+                "description": "Allow editing remote files in the Remote Files explorer"
               }
             }
           },

@@ -11,6 +11,7 @@ export interface HpcProfile {
   deleteOnSync: boolean;
   remoteTreeRoot?: string;
   remoteTreeDepth?: number;
+  remoteFilesEditable?: boolean;
 }
 
 export enum SyncState {
