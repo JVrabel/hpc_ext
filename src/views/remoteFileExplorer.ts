@@ -2,9 +2,9 @@ import * as vscode from 'vscode';
 import type { HpcProfile } from '../types';
 import { SshSession, RemoteEntry } from '../sshSession';
 
-// ---------- Tree item ----------
+// ---------- Tree items ----------
 
-class RemoteTreeItem extends vscode.TreeItem {
+export class RemoteTreeItem extends vscode.TreeItem {
   constructor(
     public readonly entry: RemoteEntry,
     public readonly remotePath: string,
@@ -16,36 +16,53 @@ class RemoteTreeItem extends vscode.TreeItem {
         : vscode.TreeItemCollapsibleState.None,
     );
 
+    // Wiring resourceUri lets VS Code's active icon theme render the proper
+    // file/folder icon and apply consistent tree-row spacing.
+    this.resourceUri = vscode.Uri.parse(`hpc-remote://${remotePath}`);
+
     if (entry.isDirectory) {
       this.contextValue = 'folder';
-      this.iconPath = new vscode.ThemeIcon('folder');
     } else {
       this.contextValue = 'file';
-      this.iconPath = new vscode.ThemeIcon('file');
-      // Open file in editor when clicked
-      const uri = vscode.Uri.parse(`hpc-remote://${this.remotePath}`);
       this.command = {
         command: 'vscode.open',
         title: 'Open Remote File',
-        arguments: [uri],
+        arguments: [this.resourceUri],
       };
     }
 
-    this.tooltip = this.remotePath;
+    this.tooltip = remotePath;
   }
 }
+
+class RootHeaderItem extends vscode.TreeItem {
+  constructor(currentRoot: string) {
+    super(currentRoot, vscode.TreeItemCollapsibleState.None);
+    this.description = 'change…';
+    this.tooltip = `Browsing: ${currentRoot}\nClick to navigate to a different path.`;
+    this.iconPath = new vscode.ThemeIcon('root-folder');
+    this.contextValue = 'rootHeader';
+    this.command = {
+      command: 'hpc-sync.changeRemoteRoot',
+      title: 'Change remote root',
+    };
+  }
+}
+
+type ExplorerItem = RemoteTreeItem | RootHeaderItem;
 
 // ---------- Explorer (TreeDataProvider + FileSystemProvider) ----------
 
 export class RemoteFileExplorer
-  implements vscode.TreeDataProvider<RemoteTreeItem>, vscode.FileSystemProvider
+  implements vscode.TreeDataProvider<ExplorerItem>, vscode.FileSystemProvider
 {
   private profile: HpcProfile | undefined;
   private session: SshSession | undefined;
   private _connected = false;
+  private currentRoot: string | undefined;
 
   // TreeDataProvider events
-  private _onDidChangeTreeData = new vscode.EventEmitter<RemoteTreeItem | undefined>();
+  private _onDidChangeTreeData = new vscode.EventEmitter<ExplorerItem | undefined>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
   // FileSystemProvider events
@@ -56,14 +73,20 @@ export class RemoteFileExplorer
     return this._connected;
   }
 
+  getCurrentRoot(): string | undefined {
+    if (!this.profile) { return undefined; }
+    return this.currentRoot ?? this.profile.remoteTreeRoot ?? this.profile.remoteProjectDir;
+  }
+
   // ---- Profile management ----
 
   setActiveProfile(profile: HpcProfile | undefined): void {
-    // Disconnect if profile changes
+    // Disconnect and reset session-only root when profile changes.
     if (this._connected) {
       this.disconnectInternal();
     }
     this.profile = profile;
+    this.currentRoot = undefined;
     this.updateContext();
     this._onDidChangeTreeData.fire(undefined);
   }
@@ -122,38 +145,58 @@ export class RemoteFileExplorer
     this._onDidChangeTreeData.fire(undefined);
   }
 
+  async setRoot(newPath: string): Promise<void> {
+    if (!this.profile || !this.session || !this._connected) {
+      vscode.window.showWarningMessage('Connect to the remote first.');
+      return;
+    }
+    const normalised = normalisePath(newPath);
+    try {
+      const info = await this.session.stat(normalised);
+      if (!info.isDirectory) {
+        vscode.window.showErrorMessage(`Not a directory: ${normalised}`);
+        return;
+      }
+    } catch (err: any) {
+      vscode.window.showErrorMessage(`Cannot access ${normalised}: ${err.message}`);
+      return;
+    }
+    this.currentRoot = normalised;
+    this.session.clearCache();
+    this._onDidChangeTreeData.fire(undefined);
+  }
+
   // ---- TreeDataProvider ----
 
-  getTreeItem(element: RemoteTreeItem): vscode.TreeItem {
+  getTreeItem(element: ExplorerItem): vscode.TreeItem {
     return element;
   }
 
-  async getChildren(element?: RemoteTreeItem): Promise<RemoteTreeItem[]> {
+  async getChildren(element?: ExplorerItem): Promise<ExplorerItem[]> {
     if (!this.profile || !this.session || !this._connected) {
       return [];
     }
 
-    const maxDepth = this.profile.remoteTreeDepth ?? 3;
-
-    let dirPath: string;
-    let depth: number;
-
     if (!element) {
-      // Root
-      dirPath = this.profile.remoteTreeRoot || this.profile.remoteProjectDir;
-      depth = 0;
-    } else {
-      dirPath = element.remotePath;
-      // Calculate depth from root
-      const root = this.profile.remoteTreeRoot || this.profile.remoteProjectDir;
-      const relative = dirPath.substring(root.length).replace(/^\//, '');
-      depth = relative ? relative.split('/').length : 0;
+      // Top-level: header row + root directory contents.
+      const root = this.getCurrentRoot();
+      if (!root) { return []; }
+      const items: ExplorerItem[] = [new RootHeaderItem(root)];
+      const children = await this.listAsItems(root);
+      items.push(...children);
+      return items;
     }
 
-    if (depth >= maxDepth) {
+    if (element instanceof RootHeaderItem) {
       return [];
     }
 
+    // Folder expansion — fully lazy, no artificial depth cap.
+    return this.listAsItems(element.remotePath);
+  }
+
+  private async listAsItems(dirPath: string): Promise<RemoteTreeItem[]> {
+    if (!this.session) { return []; }
     let entries: RemoteEntry[];
     try {
       entries = await this.session.listDirectory(dirPath);
@@ -162,7 +205,6 @@ export class RemoteFileExplorer
       return [];
     }
 
-    // Sort: directories first, then alphabetical
     entries.sort((a, b) => {
       if (a.isDirectory !== b.isDirectory) {
         return a.isDirectory ? -1 : 1;
@@ -258,4 +300,16 @@ export class RemoteFileExplorer
     this._onDidChangeTreeData.dispose();
     this._onDidChangeFile.dispose();
   }
+}
+
+function normalisePath(p: string): string {
+  let out = p.trim();
+  if (!out.startsWith('/')) {
+    out = '/' + out;
+  }
+  // Strip trailing slash except for root.
+  if (out.length > 1 && out.endsWith('/')) {
+    out = out.replace(/\/+$/, '');
+  }
+  return out;
 }

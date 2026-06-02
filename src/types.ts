@@ -1,3 +1,9 @@
+export interface QuickAction {
+  label: string;
+  command: string;
+  instantExecute: boolean;
+}
+
 export interface HpcProfile {
   name: string;
   sshHost: string;
@@ -10,8 +16,8 @@ export interface HpcProfile {
   excludePatterns: string[];
   deleteOnSync: boolean;
   remoteTreeRoot?: string;
-  remoteTreeDepth?: number;
   remoteFilesEditable?: boolean;
+  quickActions?: QuickAction[];
 }
 
 export enum SyncState {

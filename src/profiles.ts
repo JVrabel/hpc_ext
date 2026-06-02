@@ -11,6 +11,7 @@ export function getProfiles(): HpcProfile[] {
     syncMode: p.syncMode ?? 'push',
     excludePatterns: p.excludePatterns ?? ['.git', 'node_modules', '__pycache__', '.venv'],
     deleteOnSync: p.deleteOnSync ?? false,
+    quickActions: p.quickActions ?? [],
   }));
 }
 

@@ -100,3 +100,25 @@ export function runSshCommand(
 export function escapeShellArg(arg: string): string {
   return "'" + arg.replace(/'/g, "'\\''") + "'";
 }
+
+/** Build the -e SSH transport string used by rsync and scp. */
+export function buildSshTransport(info: SshInfo, opts: { batchMode?: boolean } = {}): string {
+  const parts = ['ssh'];
+  if (info.sshPort) {
+    parts.push(`-p ${info.sshPort}`);
+  }
+  if (info.sshIdentityFile) {
+    parts.push(`-i "${info.sshIdentityFile}"`);
+  }
+  parts.push('-o StrictHostKeyChecking=accept-new');
+  parts.push('-o ServerAliveInterval=60');
+  parts.push('-o ServerAliveCountMax=60');
+  if (opts.batchMode) {
+    parts.push('-o BatchMode=yes');
+  }
+  return parts.join(' ');
+}
+
+export function buildRemoteAddress(info: SshInfo): string {
+  return info.sshUser ? `${info.sshUser}@${info.sshHost}` : info.sshHost;
+}

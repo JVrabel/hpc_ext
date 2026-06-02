@@ -2,7 +2,7 @@
   "name": "hpc-sync",
   "displayName": "HPC Sync",
   "description": "Local-first HPC development: sync projects to remote Linux HPC via rsync/scp, open SSH shells, manage profiles.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "hpc-sync",
   "license": "MIT",
   "repository": {
@@ -110,6 +110,25 @@
         "command": "hpc-sync.disconnectRemote",
         "title": "HPC Sync: Disconnect from Remote",
         "icon": "$(debug-disconnect)"
+      },
+      {
+        "command": "hpc-sync.changeRemoteRoot",
+        "title": "HPC Sync: Change Remote Path…",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "hpc-sync.downloadFromRemote",
+        "title": "HPC Sync: Download from Remote…",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "hpc-sync.downloadRemoteItem",
+        "title": "Download to Local…",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "hpc-sync.runQuickAction",
+        "title": "HPC Sync: Run Quick Action"
       }
     ],
     "menus": {
@@ -125,9 +144,31 @@
           "group": "navigation"
         },
         {
+          "command": "hpc-sync.changeRemoteRoot",
+          "when": "view == hpc-sync.remoteFiles && hpc-sync.remoteConnected",
+          "group": "navigation@1"
+        },
+        {
           "command": "hpc-sync.refreshRemoteFiles",
           "when": "view == hpc-sync.remoteFiles && hpc-sync.remoteConnected",
-          "group": "navigation"
+          "group": "navigation@2"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "hpc-sync.downloadRemoteItem",
+          "when": "view == hpc-sync.remoteFiles && (viewItem == folder || viewItem == file)",
+          "group": "transfer@1"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "hpc-sync.runQuickAction",
+          "when": "false"
+        },
+        {
+          "command": "hpc-sync.downloadRemoteItem",
+          "when": "false"
         }
       ]
     },
@@ -196,14 +237,34 @@
               "remoteTreeRoot": {
                 "type": "string"
               },
-              "remoteTreeDepth": {
-                "type": "integer",
-                "default": 3
-              },
               "remoteFilesEditable": {
                 "type": "boolean",
                 "default": false,
                 "description": "Allow editing remote files in the Remote Files explorer"
+              },
+              "quickActions": {
+                "type": "array",
+                "description": "One-tap commands shown under Open Remote Shell.",
+                "default": [],
+                "items": {
+                  "type": "object",
+                  "required": ["label", "command"],
+                  "properties": {
+                    "label": {
+                      "type": "string",
+                      "description": "Short label shown on the sidebar row."
+                    },
+                    "command": {
+                      "type": "string",
+                      "description": "Shell command sent to the HPC terminal."
+                    },
+                    "instantExecute": {
+                      "type": "boolean",
+                      "default": true,
+                      "description": "If true, the command runs immediately. If false, it lands at the prompt and waits for Enter."
+                    }
+                  }
+                }
               }
             }
           },

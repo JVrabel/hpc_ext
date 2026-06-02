@@ -85,6 +85,20 @@
     </div>
   </div>
 
+  <hr class="section-divider" />
+
+  <div class="form-group">
+    <label>Quick Actions</label>
+    <div class="hint">
+      One-tap commands shown under "Open Remote Shell". When pressed, the command is sent to the HPC terminal for this profile.
+      With "Instant execute" off, it lands at the prompt and waits for Enter.
+    </div>
+    <div id="quickActionsList"></div>
+    <button type="button" class="secondary" id="addQuickActionBtn" style="margin-top:6px;">+ Add Quick Action</button>
+  </div>
+
+  <hr class="section-divider" />
+
   <div class="form-group">
     <div class="checkbox-group">
       <input type="checkbox" id="remoteFilesEditable" />
@@ -104,6 +118,92 @@
   <script nonce="{{nonce}}">
     const vscode = acquireVsCodeApi();
 
+    // -------- Quick Actions list --------
+
+    function renderQuickActions(items) {
+      const root = document.getElementById('quickActionsList');
+      root.innerHTML = '';
+      items.forEach((qa, i) => root.appendChild(buildQuickActionRow(qa, i)));
+      if (items.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'hint';
+        empty.textContent = 'No quick actions yet — add one to put commands one click away.';
+        root.appendChild(empty);
+      }
+    }
+
+    function buildQuickActionRow(qa, i) {
+      const wrap = document.createElement('div');
+      wrap.className = 'qa-row';
+      wrap.dataset.index = String(i);
+
+      const label = document.createElement('input');
+      label.type = 'text';
+      label.placeholder = 'Label (e.g. salloc gpu)';
+      label.className = 'qa-label';
+      label.value = qa.label || '';
+
+      const cmd = document.createElement('textarea');
+      cmd.placeholder = 'Command, e.g.  salloc -p gpu --gres=gpu:1 --time=4:00:00';
+      cmd.className = 'qa-cmd';
+      cmd.rows = 2;
+      cmd.value = qa.command || '';
+
+      const bottom = document.createElement('div');
+      bottom.className = 'qa-row-bottom';
+
+      const check = document.createElement('label');
+      check.className = 'qa-check';
+      const checkBox = document.createElement('input');
+      checkBox.type = 'checkbox';
+      checkBox.className = 'qa-instant';
+      checkBox.checked = qa.instantExecute !== false;
+      check.appendChild(checkBox);
+      const checkText = document.createElement('span');
+      checkText.textContent = 'Instant execute (append Enter)';
+      check.appendChild(checkText);
+
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'secondary qa-remove';
+      remove.textContent = '✕ Remove';
+      remove.addEventListener('click', () => {
+        const list = collectQuickActions();
+        list.splice(i, 1);
+        renderQuickActions(list);
+      });
+
+      bottom.appendChild(check);
+      bottom.appendChild(remove);
+
+      wrap.appendChild(label);
+      wrap.appendChild(cmd);
+      wrap.appendChild(bottom);
+      return wrap;
+    }
+
+    function collectQuickActions() {
+      const rows = document.querySelectorAll('#quickActionsList .qa-row');
+      const items = [];
+      rows.forEach((row) => {
+        items.push({
+          label: row.querySelector('.qa-label').value || '',
+          command: row.querySelector('.qa-cmd').value || '',
+          instantExecute: !!row.querySelector('.qa-instant').checked,
+        });
+      });
+      return items;
+    }
+
+    document.getElementById('addQuickActionBtn').addEventListener('click', () => {
+      const items = collectQuickActions();
+      items.push({ label: '', command: '', instantExecute: true });
+      renderQuickActions(items);
+    });
+
+    // Start empty (overwritten on load-profile for existing profiles).
+    renderQuickActions([]);
+
     // Receive messages from the extension
     window.addEventListener('message', (event) => {
       const msg = event.data;
@@ -122,6 +222,7 @@
         document.getElementById('excludePatterns').value = (p.excludePatterns || []).join('\n');
         document.getElementById('deleteOnSync').checked = !!p.deleteOnSync;
         document.getElementById('remoteFilesEditable').checked = !!p.remoteFilesEditable;
+        renderQuickActions(p.quickActions || []);
         document.getElementById('deleteBtn').style.display = 'inline-block';
       } else if (msg.type === 'set-folder') {
         document.getElementById('localProjectDir').value = msg.path;
@@ -146,6 +247,9 @@
       const excludeRaw = document.getElementById('excludePatterns').value.trim();
       const excludePatterns = excludeRaw ? excludeRaw.split('\n').map(s => s.trim()).filter(Boolean) : [];
 
+      // Drop entirely-empty quick actions (no label and no command).
+      const quickActions = collectQuickActions().filter((qa) => qa.label.trim() || qa.command.trim());
+
       const profile = {
         name,
         sshHost,
@@ -158,6 +262,7 @@
         excludePatterns,
         deleteOnSync: document.getElementById('deleteOnSync').checked,
         remoteFilesEditable: document.getElementById('remoteFilesEditable').checked,
+        quickActions,
       };
 
       vscode.postMessage({ type: 'save-profile', profile });

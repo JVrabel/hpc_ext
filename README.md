@@ -16,21 +16,27 @@ Works on **Windows**, **macOS**, and **Linux**. Requires `ssh` on PATH (included
 ## Features
 
 - **Profile-based** — save multiple HPC connections (host, user, paths, exclude patterns)
-- **Push to Remote** — sync local project to remote directory (incremental with rsync)
-- **Remote File Explorer** — browse and open remote files directly in the sidebar
 - **Remote Shell** — open an SSH terminal landing in your project directory
+- **Quick Actions** — per-profile one-tap commands sent to the HPC terminal (e.g. `salloc …`, env activation, job launch). Optional "instant execute" toggle per action.
+- **Download from Remote** — pull files or whole folders to local via rsync (with progress, cancellable) or scp fallback; key-based auth, no passwords
+- **Remote File Explorer** — browse remote files; jump to any path on demand without editing the profile; deep folders work without artificial depth caps
+- **Push to Remote** — sync local project to remote directory (incremental with rsync), tucked under "Sync (advanced)" since most workflows lean on the shell
 - **SSH Key Setup** — one-click key generation and installation on the remote host
 - **Dry Run** — preview what would be synced before transferring (rsync only)
 
+### Tip — tree indentation
+
+If the Remote Files tree reads "flat", set `"workbench.tree.indent": 20` (or higher) in VS Code settings. That widens the per-level indent for every tree view in VS Code.
+
 ## Install from .vsix
 
-1. Download `hpc-sync-0.1.0.vsix` from this repository
+1. Download `hpc-sync-0.2.0.vsix` from this repository
 2. In VS Code: `Ctrl+Shift+P` → **Extensions: Install from VSIX...** → select the file
 
 Or from the command line:
 
 ```
-code --install-extension hpc-sync-0.1.0.vsix
+code --install-extension hpc-sync-0.2.0.vsix
 ```
 
 ## Build from source

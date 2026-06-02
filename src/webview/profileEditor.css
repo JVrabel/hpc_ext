@@ -126,3 +126,48 @@ button.danger {
   border-top: 1px solid var(--vscode-widget-border, var(--vscode-panel-border, #444));
   margin: 20px 0;
 }
+
+.qa-row {
+  border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border, #444));
+  border-radius: 3px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  background: var(--vscode-editorWidget-background, transparent);
+}
+
+.qa-row .qa-label {
+  margin-bottom: 6px;
+}
+
+.qa-row .qa-cmd {
+  min-height: 44px;
+  font-family: var(--vscode-editor-font-family, monospace);
+}
+
+.qa-row-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 6px;
+  gap: 12px;
+}
+
+.qa-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  text-transform: none;
+  color: var(--vscode-foreground);
+  font-weight: normal;
+  margin: 0;
+}
+
+.qa-check input[type="checkbox"] {
+  accent-color: var(--vscode-checkbox-background);
+}
+
+.qa-remove {
+  font-size: 11px;
+  padding: 3px 8px;
+}

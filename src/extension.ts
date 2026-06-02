@@ -2,18 +2,21 @@ import * as vscode from 'vscode';
 import { createOutputChannel } from './outputChannel';
 import { StatusBarManager } from './statusBar';
 import { SyncEngine } from './sync';
+import { DownloadEngine } from './download';
 import { SidebarProvider } from './views/sidebarProvider';
 import { ProfileEditorProvider } from './views/profileEditorProvider';
-import { getActiveProfile, selectProfileQuickPick, setActiveProfile } from './profiles';
-import { openRemoteShell } from './shell';
+import { getActiveProfile, selectProfileQuickPick } from './profiles';
+import { openRemoteShell, runQuickAction } from './shell';
 import { setupSshKey } from './sshKeySetup';
 import { SyncState } from './types';
-import { RemoteFileExplorer } from './views/remoteFileExplorer';
+import { RemoteFileExplorer, RemoteTreeItem } from './views/remoteFileExplorer';
+import { browseRemote } from './remoteBrowser';
 
 export function activate(context: vscode.ExtensionContext) {
   const output = createOutputChannel();
   const statusBar = new StatusBarManager();
   const syncEngine = new SyncEngine(output, statusBar);
+  const downloadEngine = new DownloadEngine(output);
   const sidebar = new SidebarProvider();
   const profileEditor = new ProfileEditorProvider(context.extensionUri);
 
@@ -111,6 +114,21 @@ export function activate(context: vscode.ExtensionContext) {
       openRemoteShell(profile);
     }),
 
+    vscode.commands.registerCommand('hpc-sync.runQuickAction', async (index: number) => {
+      const profile = getActiveProfile(context);
+      if (!profile) {
+        vscode.window.showWarningMessage('No active profile. Select one first.');
+        return;
+      }
+      const qas = profile.quickActions ?? [];
+      const action = qas[index];
+      if (!action) {
+        vscode.window.showWarningMessage('Quick action not found. The profile may have changed.');
+        return;
+      }
+      await runQuickAction(profile, action);
+    }),
+
     vscode.commands.registerCommand('hpc-sync.cancelSync', () => {
       syncEngine.cancel();
     }),
@@ -136,6 +154,73 @@ export function activate(context: vscode.ExtensionContext) {
       remoteExplorer.refresh();
     }),
 
+    vscode.commands.registerCommand('hpc-sync.changeRemoteRoot', async () => {
+      if (!remoteExplorer.connected) {
+        vscode.window.showWarningMessage('Connect to the remote first.');
+        return;
+      }
+      const current = remoteExplorer.getCurrentRoot() ?? '/';
+      const newPath = await vscode.window.showInputBox({
+        prompt: 'Remote path to browse (absolute, e.g. /scratch/jvrabel/runs)',
+        value: current,
+        ignoreFocusOut: true,
+        validateInput: (v) => (v.trim() ? undefined : 'Path cannot be empty'),
+      });
+      if (!newPath) { return; }
+      await remoteExplorer.setRoot(newPath.trim());
+    }),
+
+    vscode.commands.registerCommand('hpc-sync.downloadFromRemote', async () => {
+      const profile = getActiveProfile(context);
+      if (!profile) {
+        vscode.window.showWarningMessage('No active profile. Select one first.');
+        return;
+      }
+      const startPath = remoteExplorer.getCurrentRoot() ?? profile.remoteProjectDir;
+      const pick = await browseRemote(
+        {
+          sshHost: profile.sshHost,
+          sshUser: profile.sshUser,
+          sshPort: profile.sshPort,
+          sshIdentityFile: profile.sshIdentityFile,
+        },
+        { startPath, pickMode: 'fileOrDirectory' },
+      );
+      if (!pick) { return; }
+
+      const localDest = await pickLocalDestination();
+      if (!localDest) { return; }
+
+      await downloadEngine.download({
+        profile,
+        remotePath: pick.path,
+        isDirectory: pick.isDirectory,
+        localDestDir: localDest,
+      });
+    }),
+
+    vscode.commands.registerCommand('hpc-sync.downloadRemoteItem', async (item: RemoteTreeItem) => {
+      const profile = getActiveProfile(context);
+      if (!profile) {
+        vscode.window.showWarningMessage('No active profile. Select one first.');
+        return;
+      }
+      if (!item || !(item as any).remotePath) {
+        vscode.window.showWarningMessage('No remote item selected. Right-click a file or folder in Remote Files.');
+        return;
+      }
+
+      const localDest = await pickLocalDestination();
+      if (!localDest) { return; }
+
+      await downloadEngine.download({
+        profile,
+        remotePath: item.remotePath,
+        isDirectory: item.entry.isDirectory,
+        localDestDir: localDest,
+      });
+    }),
+
     vscode.commands.registerCommand('hpc-sync.showHelp', () => {
       const panel = vscode.window.createWebviewPanel(
         'hpcSyncHelp',
@@ -148,6 +233,16 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(treeView, remoteTreeView, statusBar, profileEditor, sidebar, remoteExplorer);
+}
+
+async function pickLocalDestination(): Promise<string | undefined> {
+  const uris = await vscode.window.showOpenDialog({
+    canSelectFolders: true,
+    canSelectFiles: false,
+    canSelectMany: false,
+    openLabel: 'Select Local Destination Folder',
+  });
+  return uris?.[0]?.fsPath;
 }
 
 function getHelpHtml(): string {
@@ -194,8 +289,32 @@ function getHelpHtml(): string {
     <li>Fill in your <strong>SSH Host</strong> (hostname or SSH config alias) and <strong>Local Project Directory</strong>.</li>
     <li>Click <strong>Browse Remote…</strong> to interactively pick (or create) the remote directory.</li>
     <li><strong>Save</strong> the profile, then <strong>Select Profile</strong> to activate it.</li>
-    <li>Click <strong>Push to Remote</strong> to sync files, or <strong>Open Remote Shell</strong> to work on the server.</li>
+    <li>Click <strong>Open Remote Shell</strong> to work on the server, or expand <strong>Sync (advanced)</strong> for Push/Dry Run.</li>
   </ol>
+
+  <h2>Quick Actions</h2>
+  <p>Per-profile one-tap commands shown directly under <strong>Open Remote Shell</strong>. Useful for the steps you type every session
+  (e.g. <code>salloc -p gpu --gres=gpu:1</code>, <code>source venv/bin/activate</code>, a job launch command).</p>
+  <ul>
+    <li>Define them in <strong>Manage Profiles → Edit</strong>. Each has a label, the command, and an "Instant execute" toggle.</li>
+    <li>With <strong>Instant execute</strong> on, the command runs immediately. Off, it lands at the terminal prompt and waits for Enter — handy for sanity-checking arguments first.</li>
+    <li>If no HPC terminal is open, clicking the action opens one and then sends the command.</li>
+  </ul>
+
+  <h2>Download from Remote</h2>
+  <p>Pull files or whole folders from the cluster to your local machine over SSH (key-based).</p>
+  <ul>
+    <li><strong>Download from Remote…</strong> button under Open Shell — opens a remote browser to pick a file or folder.</li>
+    <li><strong>Right-click in Remote Files → Download to Local…</strong> — uses the item you clicked.</li>
+    <li>Uses <code>rsync</code> if available (progress + resumable), falls back to <code>scp</code>. Key auth only; if it fails, run <strong>Setup SSH Key</strong>.</li>
+    <li>Cancel mid-transfer via the progress notification's Cancel button.</li>
+  </ul>
+
+  <h2>Remote Files — changing path</h2>
+  <p>The Remote Files explorer shows the active profile's remote directory at startup. Click the top row (the path with a "change…" hint),
+  or use the <em>go-to-file</em> icon in the view header, to jump to any absolute path on the remote — no profile edit required.
+  The override is per-session; switching profiles resets it.</p>
+  <p><span class="tip">Tip:</span> If the tree looks visually flat, set <code>"workbench.tree.indent": 20</code> (or higher) in VS Code settings — that controls how much each level indents.</p>
 
   <h2>SSH Connection</h2>
   <p>The extension uses your system's <code>ssh</code> command. You can configure:</p>
@@ -208,8 +327,8 @@ function getHelpHtml(): string {
 
   <h2>Setting Up SSH Key Authentication (Recommended)</h2>
   <p>Password-based SSH works but is tedious. Setting up key-based auth lets all operations
-  (sync, browse, shell) connect automatically.</p>
-  <p>Use the <strong>Setup SSH Key</strong> button in the sidebar, or do it manually:</p>
+  (sync, browse, shell, download) connect automatically.</p>
+  <p>Use the <strong>Setup SSH Key</strong> button (inside Sync (advanced)), or do it manually:</p>
   <pre>ssh-keygen -t ed25519
 ssh-copy-id user@your-hpc-host</pre>
   <p>You'll enter your password one last time. After that, SSH keys handle authentication.</p>
@@ -217,23 +336,10 @@ ssh-copy-id user@your-hpc-host</pre>
 
   <h2>Syncing Files</h2>
   <ul>
-    <li><strong>Push to Remote</strong> — uploads local files to the remote directory.</li>
+    <li><strong>Push to Remote</strong> (inside Sync (advanced)) — uploads local files to the remote directory.</li>
     <li><strong>Push (Dry Run)</strong> — shows what <em>would</em> be synced without actually transferring (rsync only).</li>
-    <li><strong>rsync</strong> is preferred (incremental, supports exclude patterns). If not found, the extension falls back to <code>scp</code> (full copy, no excludes).</li>
-    <li>On Windows, install rsync via <strong>WSL</strong> (<code>wsl sudo apt install rsync</code>) or <strong>MSYS2/Git Bash</strong> for the best experience.</li>
+    <li><strong>rsync</strong> is preferred (incremental, supports exclude patterns). If not found, the extension falls back to <code>scp</code>.</li>
   </ul>
-
-  <h2>Exclude Patterns</h2>
-  <p>When using rsync, you can exclude files/folders from sync. Common patterns:</p>
-  <pre>.git
-node_modules
-__pycache__
-.venv
-*.pyc</pre>
-
-  <h2>Remote Shell</h2>
-  <p><strong>Open Remote Shell</strong> opens an SSH terminal inside VS Code, landing directly
-  in your remote project directory. The connection stays alive for up to 1 hour of inactivity.</p>
 
   <h2>Troubleshooting</h2>
   <ul>

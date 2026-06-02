@@ -1,7 +1,6 @@
 import * as vscode from 'vscode';
 import {
   SshInfo,
-  buildSshArgs,
   createAskpassHelper,
   cleanupAskpass,
   runSshCommand,
@@ -10,10 +9,27 @@ import {
 
 export { SshInfo };
 
+export type PickMode = 'directory' | 'fileOrDirectory';
+
+export interface RemoteBrowsePick {
+  path: string;
+  isDirectory: boolean;
+}
+
 export async function browseRemoteDirectory(
   sshInfo: SshInfo,
   startPath?: string,
 ): Promise<string | undefined> {
+  const pick = await browseRemote(sshInfo, { startPath, pickMode: 'directory' });
+  return pick?.path;
+}
+
+export async function browseRemote(
+  sshInfo: SshInfo,
+  options: { startPath?: string; pickMode?: PickMode } = {},
+): Promise<RemoteBrowsePick | undefined> {
+  const pickMode = options.pickMode ?? 'directory';
+
   // Try key-based auth first, prompt for password if it fails
   let askpassPath: string | undefined;
 
@@ -30,7 +46,6 @@ export async function browseRemoteDirectory(
 
     askpassPath = createAskpassHelper(password);
 
-    // Verify the password works
     try {
       await runSshCommand(sshInfo, 'echo ok', askpassPath);
     } catch (err: any) {
@@ -41,17 +56,23 @@ export async function browseRemoteDirectory(
   }
 
   try {
-    return await doBrowse(sshInfo, askpassPath, startPath);
+    return await doBrowse(sshInfo, askpassPath, options.startPath, pickMode);
   } finally {
     cleanupAskpass(askpassPath);
   }
 }
 
+interface DirEntry {
+  name: string;
+  isDirectory: boolean;
+}
+
 async function doBrowse(
   sshInfo: SshInfo,
   askpassPath: string | undefined,
-  startPath?: string,
-): Promise<string | undefined> {
+  startPath: string | undefined,
+  pickMode: PickMode,
+): Promise<RemoteBrowsePick | undefined> {
   let currentPath: string;
 
   if (startPath) {
@@ -64,38 +85,46 @@ async function doBrowse(
     }
   }
 
-  // Normalise: ensure leading /, no trailing / (except root)
   if (!currentPath.startsWith('/')) {
     currentPath = '/' + currentPath;
   }
 
   while (true) {
-    // List directory entries
-    let entries: string[];
+    let entries: DirEntry[];
     try {
-      const raw = await runSshCommand(sshInfo, `ls -1 -p ${escapeShellArg(currentPath)}`, askpassPath);
+      const raw = await runSshCommand(
+        sshInfo,
+        `ls -1 -p ${escapeShellArg(currentPath)}`,
+        askpassPath,
+      );
       entries = raw
         .split('\n')
-        .map(e => e.trim())
-        .filter(e => e.endsWith('/'))
-        .map(e => e.slice(0, -1)); // strip trailing /
+        .map((e) => e.trim())
+        .filter(Boolean)
+        .map((e) => {
+          if (e.endsWith('/')) {
+            return { name: e.slice(0, -1), isDirectory: true };
+          }
+          return { name: e, isDirectory: false };
+        });
     } catch (err: any) {
       vscode.window.showErrorMessage(`Failed to list remote directory: ${err.message}`);
       return undefined;
     }
 
-    // Build QuickPick items
-    const items: (vscode.QuickPickItem & { action?: string })[] = [];
+    const items: (vscode.QuickPickItem & { action?: string; entry?: DirEntry })[] = [];
 
     items.push({
-      label: `$(folder-opened) Select: ${currentPath}`,
-      action: 'select',
+      label: `$(folder-opened) Select folder: ${currentPath}`,
+      action: 'select-dir',
     });
 
-    items.push({
-      label: '$(new-folder) Create new directory here...',
-      action: 'create',
-    });
+    if (pickMode === 'directory') {
+      items.push({
+        label: '$(new-folder) Create new directory here…',
+        action: 'create',
+      });
+    }
 
     if (currentPath !== '/') {
       items.push({
@@ -105,24 +134,47 @@ async function doBrowse(
       });
     }
 
-    for (const dir of entries.sort()) {
-      items.push({
-        label: dir,
-        description: 'directory',
-      });
+    const sorted = entries.sort((a, b) => {
+      if (a.isDirectory !== b.isDirectory) {
+        return a.isDirectory ? -1 : 1;
+      }
+      return a.name.localeCompare(b.name);
+    });
+
+    for (const ent of sorted) {
+      if (ent.isDirectory) {
+        items.push({
+          label: `$(folder) ${ent.name}`,
+          description: 'directory',
+          entry: ent,
+        });
+      } else if (pickMode === 'fileOrDirectory') {
+        items.push({
+          label: `$(file) ${ent.name}`,
+          description: 'file',
+          action: 'select-file',
+          entry: ent,
+        });
+      }
+      // Files in directory-only mode are hidden.
     }
 
     const picked = await vscode.window.showQuickPick(items, {
       placeHolder: currentPath,
-      title: 'Browse Remote Directory',
+      title: pickMode === 'fileOrDirectory' ? 'Pick remote file or folder' : 'Browse Remote Directory',
     });
 
     if (!picked) {
-      return undefined; // user pressed Esc
+      return undefined;
     }
 
-    if (picked.action === 'select') {
-      return currentPath;
+    if (picked.action === 'select-dir') {
+      return { path: currentPath, isDirectory: true };
+    }
+
+    if (picked.action === 'select-file' && picked.entry) {
+      const filePath = currentPath === '/' ? '/' + picked.entry.name : currentPath + '/' + picked.entry.name;
+      return { path: filePath, isDirectory: false };
     }
 
     if (picked.action === 'create') {
@@ -148,7 +200,7 @@ async function doBrowse(
         continue;
       }
 
-      return newPath;
+      return { path: newPath, isDirectory: true };
     }
 
     if (picked.action === 'up') {
@@ -158,8 +210,10 @@ async function doBrowse(
     }
 
     // Navigate into subdirectory
-    currentPath = currentPath === '/'
-      ? '/' + picked.label
-      : currentPath + '/' + picked.label;
+    if (picked.entry?.isDirectory) {
+      currentPath = currentPath === '/'
+        ? '/' + picked.entry.name
+        : currentPath + '/' + picked.entry.name;
+    }
   }
 }
